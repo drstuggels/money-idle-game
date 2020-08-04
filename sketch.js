@@ -1,5 +1,5 @@
 let businesses = [];
-let bosss, store;
+let boss, store, upgrades;
 
 let businessHeight = 100;
 let progressMax;
@@ -7,7 +7,7 @@ let buyButtonWidth;
 let theFont;
 const percentPadding = 20;
 const detailSpacing = 28;
-const fps = 30;
+const fps = 60;
 const bossPanelHeight = 150;
 const closePanelHeight = 40;
 
@@ -17,7 +17,7 @@ function preload() {
 
 function setup() {
   //style
-  createCanvas(500, 800);
+  createCanvas(500, windowHeight - 20);
   noStroke();
   textFont(theFont);
 
@@ -31,11 +31,26 @@ function setup() {
   //create store
   store = new Store();
 
+  //create upgrades
+  upgrades = new Upgrades();
+
   //create starting businesses
   businesses.push(new Business(5, 100, 50));
+
+  if (localStorage.getItem("money") !== null) {
+    boss.money = localStorage.getItem("money");
+  }
 }
 
+let iterations = 0;
 function draw() {
+  if ((iterations / fps) % 5 == 0) {
+    localStorage.setItem("money", boss.money);
+    iterations = 0;
+    console.log("saved");
+  }
+  iterations++;
+
   background(0);
 
   // DRAW BUSINESSES
@@ -49,6 +64,9 @@ function draw() {
 
   if (store.status) {
     store.show();
+  }
+  if (upgrades.status) {
+    upgrades.show();
   }
 }
 
@@ -64,7 +82,6 @@ class Business {
     this.p = 0;
     this.status = false;
 
-    //setInterval(this.update(),this.s*1000);
     this.stepsPerLoop = 1 / (this.s * fps);
   }
   show(y) {
@@ -233,7 +250,6 @@ class Store {
   }
   buy(i) {
     if (boss.money >= this.items[i].pcost && this.items[i].owned == false) {
-      console.log("ass");
       businesses.push(
         new Business(
           this.items[i].time,
@@ -252,8 +268,6 @@ class Store {
     this.status = false;
   }
   show() {
-    fill(255);
-
     this.height = (height - closePanelHeight) / this.items.length;
     for (let i in this.items) {
       fill(i % 2 == 0 ? color("#3D3D3D") : color("#333333"));
@@ -264,7 +278,7 @@ class Store {
       textAlign(LEFT, CENTER);
       text(
         "BUY FOR " + nfc(this.items[i].pcost) + "€",
-        20,
+        percentPadding,
         i * this.height + this.height / 2
       );
 
@@ -317,43 +331,123 @@ class Store {
   }
 }
 
+class Upgrades {
+  constructor() {
+    this.status = false;
+    this.items = [
+      {
+        name: "double",
+        description: "Double the profit for all owned businesses.",
+        cost: 5000,
+        increaseFactor: 2,
+        owned: 0,
+        func: () => {
+          for (let b of businesses) {
+            b.m *= 2;
+          }
+        },
+      },
+    ];
+  }
+  open() {
+    this.status = true;
+  }
+  close() {
+    this.status = false;
+  }
+  show() {
+    fill(0);
+    rect(0, 0, width, height);
+
+    this.height = 80;
+    for (let i in this.items) {
+      fill(i % 2 == 0 ? color("#3D3D3D") : color("#333333"));
+      rect(0, 0, width, this.height);
+      fill(200);
+      textAlign(LEFT, CENTER);
+      textSize(12);
+      text(
+        this.items[i].description,
+        percentPadding,
+        this.height * i + this.height / 2
+      );
+
+      textAlign(RIGHT, CENTER);
+      textSize(18);
+      text(
+        nfc(this.items[i].cost) + "€",
+        width - percentPadding,
+        this.height * i + this.height / 2
+      );
+    }
+
+    // money and close
+    fill(150, 0, 0);
+    rect(0, height - closePanelHeight, width, closePanelHeight);
+    fill(0);
+    textAlign(LEFT, CENTER);
+    text("Click to close.", percentPadding, height - closePanelHeight / 2);
+    textAlign(RIGHT, CENTER);
+    text(
+      "My money: " + nfc(boss.money) + "€",
+      width - percentPadding,
+      height - closePanelHeight / 2
+    );
+  }
+  buy(i) {
+    if (boss.money >= this.items[i].cost) {
+      boss.money -= this.items[i].cost;
+
+      this.items[i].func();
+      this.items[i].cost *= this.items[i].increaseFactor;
+    }
+  }
+}
+
 function mousePressed() {
   if (mouseX <= width && mouseY <= height) {
+    // close store or upgrades if open
+    if (
+      (store.status || upgrades.status) &&
+      mouseY > height - closePanelHeight
+    ) {
+      store.close();
+      upgrades.close();
+    }
+    // buy from store if open
     if (store.status) {
       let realY = floor(mouseY / store.height);
       if (store.items[realY] !== undefined) {
         store.buy(realY);
-      } else {
-        store.close();
       }
-    } else if (mouseY > height - bossPanelHeight) {
-      // in boss panel
+    }
+    //buy from upgrades if open
+    else if (upgrades.status) {
+      let realY = floor(mouseY / upgrades.height);
+      if (upgrades.items[realY] !== undefined) {
+        upgrades.buy(realY);
+      }
+    }
+    // if in boss panel
+    else if (mouseY > height - bossPanelHeight) {
       if (mouseX > width - buyButtonWidth) {
         // if in right side
         if (mouseY < height - bossPanelHeight / 2) {
           // if press store
           store.open();
         } else {
-          console.log("upgrade");
+          // if press upgrades
+          upgrades.open();
         }
       }
-    } else if (mouseX >= progressMax) {
+    }
+    // buy business if click on progress bar
+    else if (mouseY < height - bossPanelHeight) {
       let realY = floor(mouseY / businessHeight);
       if (businesses[realY] !== undefined) {
         businesses[realY].buy();
       }
     }
-  }
-}
-
-function keyPressed() {
-  if (key == " ") {
-    if (store.status) {
-      store.close();
-    } else {
-      store.open();
-    }
-    return false;
   }
 }
 
