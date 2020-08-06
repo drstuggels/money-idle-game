@@ -10,6 +10,7 @@ const detailSpacing = 28;
 const fps = 60;
 const bossPanelHeight = 150;
 const closePanelHeight = 40;
+const saveFrequency = 10;
 
 function preload() {
   theFont = loadFont("theFont.otf");
@@ -17,7 +18,13 @@ function preload() {
 
 function setup() {
   //style
-  createCanvas(500, windowHeight - 20);
+  const currentUrl = window.location.search;
+  const urlParams = new URLSearchParams(currentUrl);
+  if (urlParams.get("fs") == null) {
+    createCanvas(500, windowHeight - 20);
+  } else {
+    createCanvas(windowWidth, windowHeight);
+  }
   noStroke();
   textFont(theFont);
 
@@ -34,20 +41,66 @@ function setup() {
   //create upgrades
   upgrades = new Upgrades();
 
-  //create starting businesses
-  businesses.push(new Business(5, 100, 50));
-
-  if (localStorage.getItem("money") !== null) {
-    boss.money = localStorage.getItem("money");
+  if (localStorage.getItem("gameData") !== null) {
+    //console.log("loading game...");
+    loadGame();
+  } else {
+    //create starting businesses
+    businesses.push(new Business(5, 100, 50));
   }
+}
+
+function saveGame() {
+  let bzArr = [];
+  for (let b of businesses) {
+    bzArr.push([b.s, b.m, b.c, b.p, b.status]);
+  }
+  let stArr = [];
+  for (let s of store.items) {
+    stArr.push(s.owned);
+  }
+  let upArr = [];
+  for (let u of upgrades.items) {
+    upArr.push(u.owned);
+  }
+  let mny = boss.money;
+
+  let gameData = {
+    bzArr,
+    stArr,
+    upArr,
+    mny,
+  };
+  localStorage.setItem("gameData", JSON.stringify(gameData));
+}
+
+function loadGame() {
+  let gameData = JSON.parse(localStorage.getItem("gameData"));
+  let { bzArr, stArr, upArr, mny } = gameData;
+
+  for (let b of bzArr) {
+    businesses.push(new Business(b[0], b[1], b[2]));
+    let recent = businesses[businesses.length - 1];
+    recent.p = b[3];
+    recent.status = b[4];
+  }
+  for (let i in stArr) {
+    store.items[i].owned = stArr[i];
+  }
+  for (let i in upArr) {
+    let item = upgrades.items[i];
+    item.cost =
+      upArr[i] == 0 ? item.cost : item.cost * item.increaseFactor * upArr[i];
+  }
+  boss.money = mny;
 }
 
 let iterations = 0;
 function draw() {
-  if ((iterations / fps) % 5 == 0) {
-    localStorage.setItem("money", boss.money);
+  if (iterations == saveFrequency * fps) {
+    //console.log("saving game...");
+    saveGame();
     iterations = 0;
-    console.log("saved");
   }
   iterations++;
 
@@ -82,6 +135,9 @@ class Business {
     this.p = 0;
     this.status = false;
 
+    this.calculateSteps();
+  }
+  calculateSteps() {
     this.stepsPerLoop = 1 / (this.s * fps);
   }
   show(y) {
@@ -211,9 +267,17 @@ class Store {
         pcost: 3502,
         owned: false,
       },
+      // remove
+      {
+        time: 1,
+        money: 101,
+        cost: 10,
+        pcost: 500,
+        owned: false,
+      },
       {
         time: 60 * 10,
-        money: 1000,
+        money: 10000,
         cost: 5,
         pcost: 10009,
         owned: false,
@@ -250,15 +314,10 @@ class Store {
   }
   buy(i) {
     if (boss.money >= this.items[i].pcost && this.items[i].owned == false) {
-      businesses.push(
-        new Business(
-          this.items[i].time,
-          this.items[i].money,
-          this.items[i].cost
-        )
-      );
-      boss.money -= this.items[i].pcost;
-      this.items[i].owned = true;
+      let item = this.items[i];
+      businesses.push(new Business(item.time, item.money, item.cost));
+      boss.money -= item.pcost;
+      item.owned = true;
     }
   }
   open() {
@@ -347,6 +406,19 @@ class Upgrades {
           }
         },
       },
+      {
+        name: "faster",
+        description: "Cut the time to about half on all owned businesses.",
+        cost: 1000,
+        increaseFactor: 4,
+        owned: 0,
+        func: () => {
+          for (let b of businesses) {
+            b.s = b.s / 2;
+            b.calculateSteps();
+          }
+        },
+      },
     ];
   }
   open() {
@@ -362,7 +434,7 @@ class Upgrades {
     this.height = 80;
     for (let i in this.items) {
       fill(i % 2 == 0 ? color("#3D3D3D") : color("#333333"));
-      rect(0, 0, width, this.height);
+      rect(0, i * this.height, width, this.height);
       fill(200);
       textAlign(LEFT, CENTER);
       textSize(12);
@@ -381,7 +453,7 @@ class Upgrades {
       );
     }
 
-    // money and close
+    //money and close
     fill(150, 0, 0);
     rect(0, height - closePanelHeight, width, closePanelHeight);
     fill(0);
@@ -413,12 +485,14 @@ function mousePressed() {
     ) {
       store.close();
       upgrades.close();
+      return;
     }
     // buy from store if open
     if (store.status) {
       let realY = floor(mouseY / store.height);
       if (store.items[realY] !== undefined) {
         store.buy(realY);
+        return;
       }
     }
     //buy from upgrades if open
@@ -426,6 +500,7 @@ function mousePressed() {
       let realY = floor(mouseY / upgrades.height);
       if (upgrades.items[realY] !== undefined) {
         upgrades.buy(realY);
+        return;
       }
     }
     // if in boss panel
@@ -435,9 +510,11 @@ function mousePressed() {
         if (mouseY < height - bossPanelHeight / 2) {
           // if press store
           store.open();
+          return;
         } else {
           // if press upgrades
           upgrades.open();
+          return;
         }
       }
     }
@@ -446,6 +523,7 @@ function mousePressed() {
       let realY = floor(mouseY / businessHeight);
       if (businesses[realY] !== undefined) {
         businesses[realY].buy();
+        return;
       }
     }
   }
@@ -466,11 +544,11 @@ function formatSeconds(s = 0) {
   let formatting;
 
   if (days > 0) {
-    formatting = `${days}d ${hours}h ${minutes}m ${seconds}s`;
+    formatting = `${days}d ${hours}h ${minutes}m ${round(seconds)}s`;
   } else if (hours > 0) {
-    formatting = `${hours}h ${minutes}m ${seconds}s`;
+    formatting = `${hours}h ${minutes}m ${round(seconds)}s`;
   } else if (minutes > 0) {
-    formatting = `${minutes}m ${seconds}s`;
+    formatting = `${minutes}m ${round(seconds)}s`;
   } else {
     formatting = `${seconds}s`;
   }
