@@ -6,9 +6,6 @@
 body {
     background-color: #181818;
     height: 100vh;
-    -webkit-user-select: none;
-    -webkit-tap-highlight-color: transparent;
-    -webkit-touch-callout: none;
     display: flex;
     justify-content: center;
     align-items: center;
